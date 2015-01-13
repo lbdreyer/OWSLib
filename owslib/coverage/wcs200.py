@@ -15,7 +15,7 @@ from __future__ import (absolute_import, division, print_function)
 
 import warnings
 
-from wcsBase import WCSBase, WCSCapabilitiesReader, ServiceException
+from owslib.coverage.wcsBase import WCSBase, WCSCapabilitiesReader, ServiceException
 from owslib.util import openURL, testXMLValue
 from urllib import urlencode
 from urllib2 import urlopen
@@ -97,6 +97,7 @@ class MetOceanCoverageCollection(WCSExtension):
                 keywords[keyword_name] = element_fn(child)
             else:
                 log.debug('Coverage tag {} not found.'.format(child.tag))
+                print('unknown_tag', child.tag)
         try:
             return cls(**keywords)
         except:
@@ -127,23 +128,35 @@ WCSExtension.registered_extensions['{http://def.wmo.int/metce/2013/metocean}Cove
 
 
 class ReferenceTimes(object):
+    WCS_namespaces['gml32'] = "http://www.opengis.net/gml/3.2"
+    WCS_namespaces['WCSmetOcean'] = 'http://def.wmo.int/metce/2013/metocean'
     def __init__(self, times):
         self.times = times
 
     @classmethod
     def from_xml(cls, element):
-        # XXX TODO
-        return cls(element)
+        #print('REFTIME-fromxml:', type(element), repr(element))
+        content, = element.findall('WCSmetOcean:ReferenceTime', namespaces=WCS_namespaces)
+        children = content.findall('gml32:timePosition', namespaces=WCS_namespaces)
+        times = [child.text for child in content]
+        print(times)
+        return cls(times)
 
 
 class GMLEnvelope(object):
     WCS_namespaces['gml32'] = "http://www.opengis.net/gml/3.2"
     def __init__(self, times):
-        self.times = times
+        return None
+        self.name = name
+        self.labels = labels
+        self.units = units
+        self.dimension = dimension
+        self.lower_corner = lower_corner
+        self.upper_corner = upper_corner
 
     @classmethod
     def from_xml(cls, element):
-        # XXX TODO
+        
         return cls(element)
 
 
@@ -600,7 +613,7 @@ coverage_request_example = """
     
     <wcs2:Extension>
         <rsub:rangeSubset>
-            <rsub:rangeComponent>temperature</rsub:rangeComponent>
+            <rsub:rangeComponent>UKMO_Global_Temperature</rsub:rangeComponent>
         </rsub:rangeSubset>
         <wcsCRS:GetCoverageCrs>
             <wcsCRS:subsettingCrs>
@@ -611,7 +624,7 @@ coverage_request_example = """
             </wcsCRS:subsettingCrs>
         </wcsCRS:GetCoverageCrs>
     </wcs2:Extension>
-    <wcs2:CoverageId>GFS_Latest_ISBL</wcs2:CoverageId>
+    <wcs2:CoverageId>UKMO_Global_2015-01-12T06.00.00Z_AGL</wcs2:CoverageId>
     <metocean:DimensionSlice>
         <wcs2:Dimension>lat</wcs2:Dimension>
         <metocean:SlicePoint uomLabels="Deg">51.0</metocean:SlicePoint>
@@ -624,9 +637,9 @@ coverage_request_example = """
 </wcs2:GetCoverage>
 """.strip()
 
-
-if __name__ == '__main__':
-    wcs = WebCoverageService_2_0_0('https://ogcie.iblsoft.com/metocean/wcs')
+def main():
+#    wcs = WebCoverageService_2_0_0('https://ogcie.iblsoft.com/metocean/wcs')
+    wcs = WebCoverageService_2_0_0('http://exxvmviswxaftsing02:8008/GlobalWCSService')
     print(wcs.contents.keys())
     print(wcs.contents_extensions)
     print([op.name for op in wcs.operations])
@@ -645,4 +658,7 @@ if __name__ == '__main__':
     
     print(fh.name)
 #     os.unlink(fh.name)
-    
+
+
+if __name__ == '__main__':
+    main()
