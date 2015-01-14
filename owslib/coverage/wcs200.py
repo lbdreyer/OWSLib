@@ -18,16 +18,14 @@ import warnings
 from owslib.coverage.wcsBase import WCSBase, WCSCapabilitiesReader, ServiceException
 from owslib.util import openURL, testXMLValue
 from urllib import urlencode
-from urllib2 import urlopen
 from owslib.etree import etree
-import os, errno
-from owslib.coverage import wcsdecoder
+import os
 from owslib.crs import Crs
 
 import logging
 from owslib.util import log
 
-from owslib.etree import etree
+import gml
 
 def ns(tag):
     return '{http://www.opengis.net/wcs/2.0}'+tag
@@ -38,6 +36,8 @@ from owslib.util import nspath_eval
 WCS_namespaces = Namespaces().get_namespaces(['wcs', 'wcs20', 'ows', 'ows200'])
 WCS_namespaces['wcs20ows'] = WCS_namespaces['wcs20'] + '/ows'
 
+GML_names = {'gml32': 'http://www.opengis.net/gml/3.2'} 
+MO_names = {'WCSmetOcean': 'http://def.wmo.int/metce/2013/metocean'}
 
 VERSION = '2.0.0'
 
@@ -86,10 +86,11 @@ class MetOceanCoverageCollection(WCSExtension):
     @classmethod
     def from_xml(cls, element, service):
         get_text = lambda elem: elem.text
-        element_mapping = {'{{{WCSmetOcean}}}coverageCollectionId'.format(**WCS_namespaces): ['coverage_collection_id', get_text],
+        element_mapping = {'{{{WCSmetOcean}}}coverageCollectionId'.format(**MO_names): ['coverage_collection_id', get_text],
                            # The latest spect states that there will be an envelope at this level, but the test server has a boundedBy parenting the envelope.
-                           '{{{gml32}}}boundedBy'.format(**WCS_namespaces): ['envelope', GMLBoundedBy.from_xml],
-                           '{{{WCSmetOcean}}}referenceTimeList'.format(**WCS_namespaces): ['reference_times', ReferenceTimes.from_xml]}
+                           '{{{gml32}}}boundedBy'.format(**GML_names): ['envelope', GMLBoundedBy.from_xml],
+                           '{{{WCSmetOcean}}}referenceTimeList'.format(**MO_names): ['reference_times', ReferenceTimes.from_xml]}
+
         keywords = {'service': service}
         for child in element:
             if child.tag in element_mapping:
@@ -128,36 +129,14 @@ WCSExtension.registered_extensions['{http://def.wmo.int/metce/2013/metocean}Cove
 
 
 class ReferenceTimes(object):
-    WCS_namespaces['gml32'] = "http://www.opengis.net/gml/3.2"
-    WCS_namespaces['WCSmetOcean'] = 'http://def.wmo.int/metce/2013/metocean'
     def __init__(self, times):
         self.times = times
 
     @classmethod
     def from_xml(cls, element):
-        #print('REFTIME-fromxml:', type(element), repr(element))
-        content, = element.findall('WCSmetOcean:ReferenceTime', namespaces=WCS_namespaces)
-        children = content.findall('gml32:timePosition', namespaces=WCS_namespaces)
-        times = [child.text for child in content]
-        print(times)
+        children = list(element[0])
+        times = [gml.GMLTimePosition.from_xml(child) for child in children]
         return cls(times)
-
-
-class GMLEnvelope(object):
-    WCS_namespaces['gml32'] = "http://www.opengis.net/gml/3.2"
-    def __init__(self, times):
-        return None
-        self.name = name
-        self.labels = labels
-        self.units = units
-        self.dimension = dimension
-        self.lower_corner = lower_corner
-        self.upper_corner = upper_corner
-
-    @classmethod
-    def from_xml(cls, element):
-        
-        return cls(element)
 
 
 class GMLBoundedBy(object):
@@ -165,7 +144,7 @@ class GMLBoundedBy(object):
     def from_xml(cls, element):
         # This is a dumb class which just returns its only child (this is removed
         # from the spec in later revisions, but is still in place on the test server).
-        return GMLEnvelope.from_xml(element[0])
+        return gml.GMLEnvelope.from_xml(element[0])
 
 
 class CoverageSummary(object):
@@ -658,7 +637,7 @@ def main():
     
     print(fh.name)
 #     os.unlink(fh.name)
-
+    return wcs
 
 if __name__ == '__main__':
     main()
