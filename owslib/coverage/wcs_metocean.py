@@ -17,9 +17,6 @@ GML_names = {'gml32': 'http://www.opengis.net/gml/3.2'}
 _WCS_EXTENSION_SUBTYPES = []
 
 class MetOceanCoverageCollection(object):
-    # Define the XML tag that this object represents.
-    TAG = '{http://def.wmo.int/metce/2013/metocean}CoverageCollectionSummary'
-
     def __init__(self, service, coverage_collection_id,
                  name=None, envelope=None, reference_times=None):
         #: The WebCoverageService instance that created this CoverageCollection.
@@ -82,10 +79,8 @@ class MetOceanReferenceTimeList(object):
 
     @classmethod
     def from_xml(cls, element):
-        #print('REFTIME-fromxml:', type(element), repr(element))
-        content, = element.findall('meto:ReferenceTime', namespaces=MO_names)
-        children = content.findall('gml32:timePosition', namespaces=GML_names)
-        times = [GMLTimePosition.from_xml(child) for child in content]
+        children = list(element[0])
+        times = [GMLTimePosition.from_xml(child) for child in children]
         return cls(times)
 
 

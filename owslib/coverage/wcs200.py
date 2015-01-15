@@ -18,10 +18,10 @@ import warnings
 from owslib.coverage.wcsBase import WCSBase, WCSCapabilitiesReader, ServiceException
 from owslib.util import openURL, testXMLValue
 from urllib import urlencode
-from urllib2 import urlopen
-import os, errno
-from owslib.coverage import wcsdecoder
-from owslib.crs import Crs
+
+from owslib.etree import etree
+import os
+from owslib.coverage import gml
 
 import lxml.etree as etree
 
@@ -35,8 +35,6 @@ from owslib.util import log
 ##            raise Exception()
 #
 #log = local_log()
-
-from owslib.etree import etree
 
 def ns(tag):
     return '{http://www.opengis.net/wcs/2.0}'+tag
@@ -113,8 +111,8 @@ class CoverageSummary(object):
 
         """
         service = self.service
-        coverage_collection = self.service.find_operation('DescribeCoverage')
-        base_url = coverage_collection.href_via('HTTP', 'Get')
+        coverage_operation = self.service.find_operation('DescribeCoverage')
+        base_url = coverage_operation.href_via('HTTP', 'Get')
 
         #process kwargs
         request = {'version': service.version,
@@ -157,9 +155,7 @@ class WebCoverageService_2_0_0(WCSBase):
             log.debug('WCS 2.0.0 DEBUG: '
                       'capabilities contains no {} component.'.format(name))
 
-        # initialize from saved capability document or access the server
         reader = WCSCapabilitiesReader(self.version)
-
         if xml:
             self._capabilities = reader.readString(xml)
         else:
@@ -167,15 +163,13 @@ class WebCoverageService_2_0_0(WCSBase):
 
         # check for exceptions
         se = self._capabilities.find('wcs20:Exception', namespaces=WCS_names)
-
         if se is not None:
             err_message = str(se.text).strip()
             raise ServiceException(err_message, xml)
 
-        # build metadata objects
+        # build metadata objects:
 
         # serviceIdentification metadata : may be absent
-#         print(etree.tostring(self._capabilities, encoding='utf8', method='xml'))
         service = find_element(self._capabilities, 'ServiceIdentification',
                                ['ows200', 'wcs20ows', 'wcs20'])
         if service is None:
@@ -266,13 +260,10 @@ class Operation(object):
             'wcs20ows:Parameter/wcs20ows:AllowedValues/wcs20ows:Value/ows200:AllowedValues',
             namespaces=WCS_names)]
         methods = []
-        for verb in elem.findall('ows200:DCP/ows200:HTTP/*', namespaces=WCS_names):
-            url = verb.attrib['{http://www.w3.org/1999/xlink}href']
-            methods.append((verb.tag, {'url': url}))
+        for request_method in elem.findall('ows200:DCP/ows200:HTTP/*', namespaces=WCS_names):
+            url = request_method.attrib['{http://www.w3.org/1999/xlink}href']
+            methods.append((request_method.tag, {'url': url}))           
         self.methods = dict(methods)
-
-    def __repr__(self):
-        return repr(self.methods)
 
     def href_via(self, protocol='HTTP', method='Get'):
         if protocol != 'HTTP' or method not in ['Get', 'Post']:
