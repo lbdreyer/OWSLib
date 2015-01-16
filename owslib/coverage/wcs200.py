@@ -111,7 +111,7 @@ class CoverageSummary(object):
 
         """
         service = self.service
-        coverage_operation = self.service.find_operation('DescribeCoverage')
+        coverage_operation = self.service._find_operation('DescribeCoverage')
         base_url = coverage_operation.href_via('HTTP', 'Get')
 
         #process kwargs
@@ -170,27 +170,23 @@ class WebCoverageService_2_0_0(WCSBase):
         # build metadata objects:
 
         # serviceIdentification metadata : may be absent
-        service = find_element(self._capabilities, 'ServiceIdentification',
-                               ['ows200', 'wcs20ows', 'wcs20'])
-        if service is None:
+        identification = ServiceIdentification._find(self._capabilities)
+        if identification is None:
             self.identification = None
             absent('ServiceIdentification')
         else:
-            self.identification = ServiceIdentification(service)
+            self.identification = ServiceIdentification(identification)
 
         # serviceProvider : may be absent.
-        try:
-            provider = find_element(self._capabilities, 'ServiceProvider',
-                                    ['ows200'])
-        except ValueError:
+        provider = ServiceProvider._find(self._capabilities)
+        if provider is None:
             self.provider = None
             absent('ServiceProvider')
         else:
             self.provider = ServiceProvider(provider)
 
         # serviceOperations : may be absent, else contains a list of Operation.
-        operations = self._capabilities.find('ows200:OperationsMetadata',
-                                             namespaces=WCS_names)
+        operations = Operation._find(self._capabilities)
         if operations is None:
             self.operations = []
             absent('OperationsMetadata')
@@ -231,19 +227,12 @@ class WebCoverageService_2_0_0(WCSBase):
 #            collectionid = collectionid.collectionid
 
     def getCoverage(self, xml):
-        coverage_collection = self.find_operation('GetCoverage')
+        coverage_collection = self._find_operation('GetCoverage')
         base_url = coverage_collection.href_via('HTTP', 'Post')
         from owslib.util import http_post
         return http_post(base_url, xml)
 
-    def getOperationByName(self, name):
-        """Return a named operation item."""
-        for item in self.operations:
-            if item.name == name:
-                return item
-        raise KeyError("No operation named %s" % name)
-
-    def find_operation(self, name):
+    def _find_operation(self, name):
         for item in self.operations:
             if item.name == name:
                 return item
@@ -256,9 +245,6 @@ class Operation(object):
     """
     def __init__(self, elem):
         self.name = elem.get('name')
-        self.formatOptions = [f.text for f in elem.findall(
-            'wcs20ows:Parameter/wcs20ows:AllowedValues/wcs20ows:Value/ows200:AllowedValues',
-            namespaces=WCS_names)]
         methods = []
         for request_method in elem.findall('ows200:DCP/ows200:HTTP/*', namespaces=WCS_names):
             url = request_method.attrib['{http://www.w3.org/1999/xlink}href']
@@ -273,53 +259,54 @@ class Operation(object):
                 return content['url']
         raise ValueError('{} method {} not found for {}.'.format(protocol, method, self.name))
 
+    @classmethod
+    def _find(cls, element):
+        tags = ['ows200:OperationsMetadata']
+        for tag in tags:
+            operations_element = element.find(tag, namespaces=WCS_names)
+            if operations_element is not None:
+                return operations_element
 
 class ServiceIdentification(object):
     """ Abstraction for ServiceIdentification Metadata 
     implements IServiceIdentificationMetadata"""
-    def __init__(self,elem):        
-        self.service="WCS"
+    def __init__(self, elem):        
+        self.service = "WCS"
         self.version = VERSION
-        self.title=testXMLValue(elem.find('{http://www.opengis.net/ows}Title'))
-        if self.title is None:  #may have used the wcs ows namespace:
-            self.title=testXMLValue(elem.find('{http://www.opengis.net/wcs/1.1/ows}Title'))
-        if self.title is None:  #may have used the ows200 namespace:
-            self.title=testXMLValue(elem.find('{http://www.opengis.net/ows/2.0}Title'))
-        
-        self.abstract=testXMLValue(elem.find('{http://www.opengis.net/ows}Abstract'))
-        if self.abstract is None:#may have used the wcs ows namespace:
-            self.abstract=testXMLValue(elem.find('{http://www.opengis.net/wcs/1.1/ows}Abstract'))
-        if elem.find('{http://www.opengis.net/ows}Abstract') is not None:
-            self.abstract=elem.find('{http://www.opengis.net/ows}Abstract').text
-        else:
-            self.abstract = None
-        self.keywords = [f.text for f in elem.findall('{http://www.opengis.net/ows}Keywords/{http://www.opengis.net/ows}Keyword')]
-        #self.link = elem.find('{http://www.opengis.net/wcs/1.1}Service/{http://www.opengis.net/wcs/1.1}OnlineResource').attrib.get('{http://www.w3.org/1999/xlink}href', '')
-               
+        self.title = find_element(elem, 'Title', ['ows', 'ows200']).text
+        self.abstract = find_element(elem, 'Abstract', ['ows', 'ows200', 'wcs20ows']).text
+        self.keywords = [f.text for f in elem.findall('{http://www.opengis.net/ows}Keywords/{http://www.opengis.net/ows}Keyword')] 
         if elem.find('{http://www.opengis.net/wcs/1.1/ows}Fees') is not None:            
-            self.fees=elem.find('{http://www.opengis.net/wcs/1.1/ows}Fees').text
+            self.fees = elem.find('{http://www.opengis.net/wcs/1.1/ows}Fees').text
         else:
-            self.fees=None
-        
+            self.fees = None
         if  elem.find('{http://www.opengis.net/wcs/1.1/ows}AccessConstraints') is not None:
             self.accessConstraints=elem.find('{http://www.opengis.net/wcs/1.1/ows}AccessConstraints').text
         else:
             self.accessConstraints=None
+
+    @classmethod
+    def _find(cls, element):
+        tags = ['ows200:ServiceIdentification', 'wcs20ows:ServiceIdentification',
+                'wcs20:ServiceIdentification']
+        for tag in tags:
+            service_element = element.find(tag, namespaces=WCS_names)
+            return service_element
 
 
 class ServiceProvider(object):
     """ Abstraction for ServiceProvider metadata 
     implements IServiceProviderMetadata """
     def __init__(self,elem):
-        name=elem.find('{http://www.opengis.net/ows}ProviderName')
-        if name is not None:
-            self.name=name.text
-        else:
-            self.name=None
-        #self.contact=ServiceContact(elem.find('{http://www.opengis.net/ows}ServiceContact'))
-        self.contact =ContactMetadata(elem)
-        self.url=self.name # no obvious definitive place for url in wcs, repeat provider name?
+        self.name = find_element(elem, 'ProviderName', ['ows', 'ows200']).text
+        self.contact = ContactMetadata(elem.find)
 
+    @classmethod
+    def _find(cls, element):
+        tags = ['ows200:ServiceProvider']
+        for tag in tags:
+            provider_element = element.find(tag, namespaces=WCS_names)
+            return provider_element
 
 class ContactMetadata(object):
     ''' implements IContactMetadata'''
@@ -328,37 +315,32 @@ class ContactMetadata(object):
             self.name = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}IndividualName').text
         except AttributeError:
             self.name = None
-        
+
         try:
-            self.organization=elem.find('{http://www.opengis.net/ows}ProviderName').text 
+            self.delivery_point = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}DeliveryPoint').text
         except AttributeError:
-            self.organization = None
-        
+            self.delivery_point = None
         try:
-            self.address = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}DeliveryPoint').text
-        except AttributeError:
-            self.address = None
-        try:
-            self.city=  elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}City').text
+            self.city = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}City').text
         except AttributeError:
             self.city = None
         
         try:
-            self.region= elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}AdministrativeArea').text
+            self.region = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}AdministrativeArea').text
         except AttributeError:
             self.region = None
         
         try:
-            self.postcode= elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}PostalCode').text
+            self.postcode = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}PostalCode').text
         except AttributeError:
             self.postcode = None
         
         try:
-            self.country= elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}Country').text
+            self.country = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}Country').text
         except AttributeError:
             self.country = None
         
         try:
-            self.email =            elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}ElectronicMailAddress').text
+            self.email = elem.find('{http://www.opengis.net/ows}ServiceContact/{http://www.opengis.net/ows}ContactInfo/{http://www.opengis.net/ows}Address/{http://www.opengis.net/ows}ElectronicMailAddress').text
         except AttributeError:
             self.email = None
